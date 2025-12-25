@@ -1,0 +1,89 @@
+import java.io.*;
+import java.net.*;
+import java.util.*;
+
+public class ChatServer {
+
+    private static Set<ClientHandler> clientHandlers = new HashSet<>();
+    private static final int PORT = 12345;
+
+    public static void main(String[] args) {
+        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+            System.out.println("Chat Server started on port " + PORT);
+
+            while (true) {
+                Socket clientSocket = serverSocket.accept();
+                System.out.println("New client connected: " + clientSocket.getInetAddress());
+
+                ClientHandler clientHandler = new ClientHandler(clientSocket);
+                clientHandlers.add(clientHandler);
+
+                Thread thread = new Thread(clientHandler);
+                thread.start();
+            }
+        } catch (IOException e) {
+            System.out.println("Server exception: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    // Broadcast message to all clients
+    public static void broadcast(String message, ClientHandler sender) {
+        for (ClientHandler client : clientHandlers) {
+            if (client != sender) { // don't send to sender
+                client.sendMessage(message);
+            }
+        }
+    }
+
+    // Remove client from list
+    public static void removeClient(ClientHandler client) {
+        clientHandlers.remove(client);
+    }
+}
+
+class ClientHandler implements Runnable {
+    private Socket socket;
+    private PrintWriter out;
+    private BufferedReader in;
+    private String userName;
+
+    public ClientHandler(Socket socket) {
+        this.socket = socket;
+    }
+
+    @Override
+    public void run() {
+        try {
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out = new PrintWriter(socket.getOutputStream(), true);
+
+            out.println("Enter your name: ");
+            userName = in.readLine();
+            System.out.println(userName + " joined the chat");
+            ChatServer.broadcast(userName + " has joined the chat!", this);
+
+            String message;
+            while ((message = in.readLine()) != null) {
+                if (message.equalsIgnoreCase("/quit")) {
+                    break;
+                }
+                String formattedMessage = userName + ": " + message;
+                System.out.println(formattedMessage);
+                ChatServer.broadcast(formattedMessage, this);
+            }
+        } catch (IOException e) {
+            System.out.println("Client disconnected: " + e.getMessage());
+        } finally {
+            try {
+                socket.close();
+            } catch (IOException e) {}
+            ChatServer.removeClient(this);
+            ChatServer.broadcast(userName + " has left the chat.", this);
+        }
+    }
+
+    public void sendMessage(String message) {
+        out.println(message);
+    }
+}
